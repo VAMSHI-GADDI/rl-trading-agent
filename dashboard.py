@@ -47,7 +47,7 @@ def get_live_prediction(ticker="AAPL"):
         "macd": round(float(latest['macd']), 4),
         "bb_upper": round(float(latest['bb_upper']), 2),
         "bb_lower": round(float(latest['bb_lower']), 2),
-        "action": action_map[int(action)],
+        "action": action_map[int(np.array(action).flatten()[0])],
         "history": df[['date', 'close', 'rsi', 'macd']].tail(30)
     }
 
