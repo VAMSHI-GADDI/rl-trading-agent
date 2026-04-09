@@ -3,3 +3,7 @@ uvicorn
 stable-baselines3
 numpy
 pydantic
+yfinance
+ta
+streamlit
+pandas
