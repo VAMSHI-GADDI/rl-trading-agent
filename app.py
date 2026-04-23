@@ -189,3 +189,72 @@ def leaderboard(db: Session = Depends(get_db)):
                 "joined":       str(user.created_at)[:10]
             })
     return sorted(board, key=lambda x: x["total_pnl"], reverse=True)
+# --- SAC v5 Portfolio Prediction ---
+import gymnasium as gym
+from gymnasium import spaces
+from stable_baselines3 import SAC
+
+TOP_10 = ["AAPL", "MSFT", "AMZN", "GOOGL", "META", "NVDA", "TSLA", "JPM", "JNJ", "V"]
+
+def get_portfolio_allocation():
+    # Download latest data for all 10 stocks
+    allocations = {}
+    features = []
+    prices = {}
+
+    for ticker in TOP_10:
+        try:
+            df = yf.download(ticker, period="3mo", auto_adjust=True, progress=False)
+            df.columns = [c[0].lower() if isinstance(c, tuple) else c.lower() for c in df.columns]
+            df["macd"]     = ta.trend.macd(df["close"])
+            df["rsi"]      = ta.momentum.rsi(df["close"], window=14)
+            df["bb_upper"] = ta.volatility.bollinger_hband(df["close"], window=20)
+            df["bb_lower"] = ta.volatility.bollinger_lband(df["close"], window=20)
+            df["atr"]      = ta.volatility.average_true_range(df["high"], df["low"], df["close"], window=14)
+            df = df.dropna()
+            latest = df.iloc[-1]
+            close = float(latest["close"])
+            prices[ticker] = round(close, 2)
+            rsi = float(latest["rsi"]) / 100.0
+            macd = np.clip(float(latest["macd"]), -10, 10) / 10.0
+            bb_u = float(latest["bb_upper"])
+            bb_l = float(latest["bb_lower"])
+            bb_pos = (close - bb_l) / (bb_u - bb_l + 1e-9)
+            atr = np.clip(float(latest["atr"]) / (close + 1e-9), 0, 0.1) * 10
+            features.extend([macd, rsi, bb_pos, atr])
+        except Exception as e:
+            prices[ticker] = 0.0
+            features.extend([0.0, 0.5, 0.5, 0.0])
+
+    # Build observation
+    obs = np.array(features + [1.0, 0.0], dtype=np.float32)
+    obs = np.clip(obs, -2, 2)
+
+    # Load SAC v5 and predict
+    model = SAC.load("sac_portfolio_v5.zip")
+    action, _ = model.predict(obs, deterministic=True)
+    action = np.clip(action, 1e-9, None)
+    weights = action / action.sum()
+
+    for i, ticker in enumerate(TOP_10):
+        allocations[ticker] = round(float(weights[i]) * 100, 2)
+
+    return {"allocations": allocations, "prices": prices}
+
+@app.get("/portfolio/allocate")
+def portfolio_allocate(current_user: User = Depends(get_current_user)):
+    result = get_portfolio_allocation()
+    return {
+        "model": "SAC v5 (500k steps)",
+        "allocations_pct": result["allocations"],
+        "current_prices": result["prices"],
+        "note": "Percentage of portfolio to allocate to each stock"
+    }
+
+# --- SAC v5 Portfolio Prediction ---
+import gymnasium as gym
+from gymnasium import spaces
+from stable_baselines3 import SAC
+
+TOP_10 = ["AAPL", "MSFT", "AMZN", "GOOGL", "META", "NVDA", "TSLA", "JPM", "JNJ", "V"]
+
